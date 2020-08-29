@@ -20,6 +20,7 @@ import org.springframework.util.AntPathMatcher;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -27,6 +28,9 @@ import java.util.stream.Collectors;
  * @author Christoph Deppisch
  */
 public class HttpOperationScenario extends AbstractSimulatorScenario {
+
+    private Map<String, Integer> control = new HashMap<>();
+    private int cycle;
 
     /** Operation in wsdl */
     private final Operation operation;
@@ -136,11 +140,6 @@ public class HttpOperationScenario extends AbstractSimulatorScenario {
                 requestBuilder.header(HttpMessageHeaders.HTTP_QUERY_PARAMS, "@assertThat(allOf(" + queryParams + "))@");
             }
 
-            operation.getParameters().stream()
-                    .filter(p -> p instanceof BodyParameter)
-                    .filter(Parameter::getRequired)
-                    .forEach(p -> requestBuilder.payload(createValidationPayload((BodyParameter) p)));
-
             if (inboundDataDictionary != null) {
                 requestBuilder.dictionary(inboundDataDictionary);
             }
@@ -178,26 +177,36 @@ public class HttpOperationScenario extends AbstractSimulatorScenario {
      * @param quotes
      * @return
      */
-    private String createRandomValue(Property property, boolean quotes) {
+    public String createRandomValue(Property property, boolean quotes) {
+        cycle++;
         StringBuilder payload = new StringBuilder();
+
         if (property instanceof RefProperty) {
-            Model model = definitions.get(((RefProperty) property).getSimpleRef());
-            payload.append("{");
+            if (cycle > 3) {
+                payload.append("\"\"");
+            } else {
+                Model model = definitions.get(((RefProperty) property).getSimpleRef());
+                payload.append("{");
 
-            if (model.getProperties() != null) {
-                for (Map.Entry<String, Property> entry : model.getProperties().entrySet()) {
-                    payload.append("\"").append(entry.getKey()).append("\": ").append(createRandomValue(entry.getValue(), true)).append(",");
+                if (model.getProperties() != null) {
+                    for (Map.Entry<String, Property> entry : model.getProperties().entrySet()) {
+                        payload.append("\"").append(entry.getKey()).append("\": ").append(createRandomValue(entry.getValue(), true)).append(",");
+                    }
                 }
-            }
 
-            if (payload.toString().endsWith(",")) {
-                payload.replace(payload.length() - 1, payload.length(), "");
-            }
+                if (payload.toString().endsWith(",")) {
+                    payload.replace(payload.length() - 1, payload.length(), "");
+                }
 
-            payload.append("}");
-        } else if (property instanceof ArrayProperty) {
+                payload.append("}");
+            }
+        } else if (property instanceof ArrayProperty ) {
             payload.append("[");
             payload.append(createRandomValue(((ArrayProperty) property).getItems(), true));
+            payload.append("]");
+        } else if (property instanceof MapProperty) {
+            payload.append("[");
+            payload.append(createRandomValue(((MapProperty) property).getAdditionalProperties(), true));
             payload.append("]");
         } else if (property instanceof StringProperty || property instanceof DateProperty || property instanceof DateTimeProperty) {
             if (quotes) {
@@ -219,6 +228,8 @@ public class HttpOperationScenario extends AbstractSimulatorScenario {
             }
         } else if (property instanceof IntegerProperty || property instanceof LongProperty) {
             payload.append("citrus:randomNumber(10)");
+        } else if (property instanceof DecimalProperty) {
+            payload.append("citrus:randomNumber(10)");
         } else if (property instanceof FloatProperty || property instanceof DoubleProperty) {
             payload.append("citrus:randomNumber(10)");
         } else if (property instanceof BooleanProperty) {
@@ -230,7 +241,7 @@ public class HttpOperationScenario extends AbstractSimulatorScenario {
                 payload.append("");
             }
         }
-
+        cycle--;
         return payload.toString();
     }
 
